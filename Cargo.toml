@@ -1,0 +1,7 @@
+[package]
+name = "arm-asm-wtf"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+unicorn-engine = { version = "2.0.1", path = "../unicorn-2.0.1" }
