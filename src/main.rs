@@ -1,63 +1,202 @@
 use unicorn_engine::RegisterARM64;
 use unicorn_engine::unicorn_const::{Arch, Mode, Permission, SECOND_SCALE};
 
-// Given:
-//     mov x0, #0x11
-//     mov x1, #0xfdcc83c8
-//     add x0, x1, w0, uxtb #2
-
-// NOT helpful:
-// https://developer.arm.com/documentation/dui0801/h/A64-General-Instructions/ADD--extended-register-
-// https://developer.arm.com/documentation/ddi0602/2025-03/SVE-Instructions/UXTB--UXTH--UXTW--Unsigned-byte---halfword---word-extend--predicated--
-// https://developer.arm.com/documentation/ddi0406/cb/Application-Level-Architecture/Instruction-Details/Alphabetical-list-of-instructions/UXTB?lang=en
-// https://devblogs.microsoft.com/oldnewthing/20220804-00/?p=106945 helps a bit
-// Architecture reference manual is PDF only: https://developer.arm.com/documentation/ddi0487/latest/
-// sooooooo... just emulate and be happy!
-// http://163.238.35.161/~zhangs/arm64simulator/ is broken
-// How about Unicorn?
-// https://www.unicorn-engine.org/docs/tutorial.html I don't know C...
-// Downloaded the source release tarball and saw a Cargo.toml in there...
-// Yay, Unicorn now has Rust bindings! :)
-
-// https://shell-storm.org/online/Online-Assembler-and-Disassembler/
-const CODE: [u8; 8] = [
-    0x64, 0x1f, 0x00, 0x51, // sub w4, w27, #0x7
-    0x9f, 0x04, 0x00, 0x71, // cmp w4, #0x1
-];
-const CODE_SIZE: u64 = CODE.len() as u64;
-
-const MEM_BASE: u64 = 0x1000;
-const MEM_SIZE: usize = 0x4000;
+const MEM_BASE: u64 = 0xfdcc_0000;
+const MEM_SIZE: usize = 0x1_0000;
 
 const TIMEOUT: u64 = 10 * SECOND_SCALE;
-const MAX_INSTRUCTIONS: usize = 1000;
+const MAX_INSTRUCTIONS: usize = 8000;
+const INST_SIZE: u64 = 4;
+
+// https://shell-storm.org/online/Online-Assembler-and-Disassembler/
+
+// This is effectively set_ds_odt in U-Boot
+// https://github.com/u-boot/u-boot/blob/master/drivers/ram/rockchip/sdram_rv1126.c
+
+// got offset + size from range: 0x2634 - 0x2528
+const CODE_OFFSET: u64 = 0x2528;
+const CODE_SIZE: u64 = 268;
+// hexdump -s 9512 -n 136 -e '4/1 "0x%02x, " " // xxx\n"'
+const CODE: [u8; CODE_SIZE as usize] = [
+    0xac, 0x03, 0x02, 0x91, // xxx
+    0xae, 0xe3, 0x01, 0x91, // xxx
+    0x8b, 0x21, 0x00, 0x91, // xxx
+    0x03, 0x00, 0x80, 0xd2, // xxx
+    0x6d, 0x68, 0x6e, 0x78, // xxx
+    0xed, 0x02, 0x00, 0x34, // xxx
+    0x06, 0x60, 0x01, 0x91, // xxx
+    0xea, 0x03, 0x06, 0xaa, // xxx
+    0x4f, 0x05, 0x40, 0x79, // xxx
+    0xff, 0x01, 0x0d, 0x6b, // xxx
+    0xa3, 0x05, 0x00, 0x54, // xxx
+    0x4a, 0x01, 0x40, 0x79, // xxx
+    0x8a, 0x69, 0x23, 0x78, // xxx
+    0xca, 0x04, 0x40, 0x79, // xxx
+    0x5f, 0x01, 0x0d, 0x6b, // xxx
+    0x83, 0x05, 0x00, 0x54, // xxx
+    0xc6, 0x00, 0x40, 0x79, // xxx
+    0x66, 0x01, 0x00, 0x79, // xxx
+    0x0c, 0x00, 0x00, 0x14, // xxx
+    0x16, 0x00, 0x80, 0x52, // xxx
+    0xd7, 0xff, 0xff, 0x17, // xxx
+    0x20, 0x00, 0x00, 0x90, // xxx
+    0x00, 0xa0, 0x3d, 0x91, // xxx
+    0xe9, 0xff, 0xff, 0x17, // xxx
+    0x00, 0xe0, 0x04, 0x91, // xxx
+    0xe7, 0xff, 0xff, 0x17, // xxx
+    0x00, 0xe0, 0x07, 0x91, // xxx
+    0xe5, 0xff, 0xff, 0x17, // xxx
+    0x9f, 0x69, 0x23, 0x78, // xxx
+    0x7f, 0x01, 0x00, 0x79, // xxx
+    0x63, 0x08, 0x00, 0x91, // xxx
+    0x6b, 0x09, 0x00, 0x91, // xxx
+    0x7f, 0x20, 0x00, 0xf1, // xxx
+    0x61, 0xfc, 0xff, 0x54, // back to main loop
+    0x9f, 0x04, 0x00, 0x71, // xxx
+    0xa0, 0xff, 0x40, 0x79, // xxx
+    0x09, 0x04, 0x00, 0x54, // xxx
+    0xa0, 0x03, 0x00, 0x34, // xxx
+    0xbf, 0x00, 0x08, 0x6a, // xxx
+    0x61, 0x03, 0x00, 0x54, // xxx
+    0xe5, 0x02, 0x00, 0x34, // xxx
+    0x00, 0x04, 0x1a, 0x0b, // xxx
+    0x03, 0x5c, 0x18, 0x53, // xxx
+    0x00, 0x00, 0x1a, 0x4b, // xxx
+    0x63, 0x08, 0xc0, 0x1a, // xxx
+    0x3f, 0x03, 0x00, 0x71, // xxx
+    0x64, 0x1b, 0x43, 0x7a, // xxx
+    0xc0, 0x11, 0x00, 0x54, // xxx
+    0xa2, 0xfb, 0x40, 0x79, // xxx
+    0x20, 0x07, 0x02, 0x0b, // xxx
+    0x42, 0x00, 0x19, 0x0b, // xxx
+    0x00, 0x5c, 0x18, 0x53, // xxx
+    0x00, 0x08, 0xc2, 0x1a, // xxx
+    0x02, 0x00, 0x80, 0x52, // xxx
+    0x14, 0x00, 0x00, 0x14, // xxx
+    0x1f, 0x00, 0x0a, 0xeb, // xxx
+    0xa0, 0xfa, 0xff, 0x54, // xxx
+    0x4a, 0x11, 0x00, 0xd1, // xxx
+    0xce, 0xff, 0xff, 0x17, // xxx
+    0x1f, 0x00, 0x06, 0xeb, // xxx
+    0x40, 0xfc, 0xff, 0x54, // xxx
+    0xc6, 0x10, 0x00, 0xd1, // xxx
+    0xcf, 0xff, 0xff, 0x17, // xxx
+    0x03, 0x5c, 0x18, 0x53, // xxx
+    0x00, 0x00, 0x1a, 0x0b, // xxx
+    0xeb, 0xff, 0xff, 0x17, // xxx
+    0x03, 0x20, 0x80, 0x52, // xxx
+];
+
+// each entry is a pair of u16
+const ENTRY_SIZE: u64 = 2 * 2;
+const DATA_OFFSET: u64 = 0x7500;
+const DATA_SIZE: u64 = 24 * ENTRY_SIZE;
+const DATA: [u8; DATA_SIZE as usize] = [
+    0x01, 0x00, 0x40, 0x02, // xxx
+    0x02, 0x00, 0x21, 0x01, // xxx
+    0x03, 0x00, 0xc0, 0x00, // xxx
+    0x04, 0x00, 0x90, 0x00, // xxx
+    0x05, 0x00, 0x73, 0x00, // xxx
+    0x06, 0x00, 0x60, 0x00, // xxx
+    0x07, 0x00, 0x52, 0x00, // xxx
+    0x08, 0x00, 0x48, 0x00, // xxx
+    0x09, 0x00, 0x40, 0x00, // xxx
+    0x0a, 0x00, 0x39, 0x00, // xxx
+    0x0b, 0x00, 0x34, 0x00, // xxx
+    0x0c, 0x00, 0x30, 0x00, // xxx
+    0x0d, 0x00, 0x2c, 0x00, // xxx
+    0x0e, 0x00, 0x29, 0x00, // xxx
+    0x0f, 0x00, 0x26, 0x00, // xxx
+    0x18, 0x00, 0x24, 0x00, // xxx
+    0x19, 0x00, 0x22, 0x00, // xxx
+    0x1a, 0x00, 0x20, 0x00, // xxx
+    0x1b, 0x00, 0x1e, 0x00, // xxx
+    0x1c, 0x00, 0x1c, 0x00, // xxx
+    0x1d, 0x00, 0x1b, 0x00, // xxx
+    0x1e, 0x00, 0x1a, 0x00, // xxx
+    0x1f, 0x00, 0x19, 0x00, // xxx
+    0x00, 0x00, 0x00, 0x00, // xxx
+];
+
+const LOAD_OFFSET: u64 = 0x1000;
+const DATA_BASE: u64 = MEM_BASE + LOAD_OFFSET + DATA_OFFSET;
+const CODE_BASE: u64 = MEM_BASE + LOAD_OFFSET + CODE_OFFSET;
+
+// Where to store the result - good enough.
+const RES_OFFSET: u64 = 0x3000;
+const RES_BASE: u64 = MEM_BASE + LOAD_OFFSET + RES_OFFSET;
+const RES_SIZE: u64 = 12 * 2;
 
 fn main() {
     let mut emu = unicorn_engine::Unicorn::new(Arch::ARM64, Mode::LITTLE_ENDIAN)
         .expect("failed to initialize Unicorn instance");
+    // Map our memory. Just have it all RWX, good enough for us.
     emu.mem_map(MEM_BASE, MEM_SIZE, Permission::ALL)
         .expect("failed to map code page");
-    emu.mem_write(MEM_BASE, &CODE)
+
+    // Load our code and data.
+    emu.mem_write(CODE_BASE, &CODE)
         .expect("failed to write instructions");
+    emu.mem_write(DATA_BASE, &DATA)
+        .expect("failed to write data");
 
-    emu.reg_write(RegisterARM64::W27, 0x3)
-        .expect("failed write W27");
+    // NOTE: Last entry are just 0
+    let eod = DATA_BASE + DATA_SIZE - 2 * ENTRY_SIZE;
+    let res = emu.mem_read_as_vec(eod, ENTRY_SIZE as usize);
+    println!("end of data @ {eod:08x}: {res:02x?}");
 
-    emu.emu_start(MEM_BASE, MEM_BASE + CODE_SIZE, TIMEOUT, MAX_INSTRUCTIONS)
+    // Point to our data. The code looks for it at X0.
+    emu.reg_write(RegisterARM64::X0, DATA_BASE).unwrap();
+    let sp = RES_BASE;
+    // X29 shadows the SP. It is used to store resulting data.
+    emu.reg_write(RegisterARM64::X29, sp).unwrap();
+
+    // Values used in code have to be stored in res block.
+    // The code looks at the first 4 u16 values and puts results after it.
+    // For each of the 4 values, a corresponding value is determined from DATA.
+    let a = sp + 0x78;
+    emu.mem_write(a, &[0x26, 0x00, 0x26, 0x00, 0x1e, 0x00, 0x00, 0x00])
+        .expect("failed to write data");
+
+    let res = emu.mem_read_as_vec(a, RES_SIZE as usize).unwrap();
+    println!("ini: @ {a:08x}: {res:02x?}");
+
+    // We want to reach one instruction past the code.
+    // That is where the last branch ends up.
+    let end = CODE_BASE + CODE_SIZE + 1 * INST_SIZE;
+    emu.emu_start(CODE_BASE, end, TIMEOUT, MAX_INSTRUCTIONS)
         .unwrap();
 
-    // flags are stored in the highest 4 bits
-    // https://developer.arm.com/documentation/ddi0601/2025-03/AArch64-Registers/NZCV--Condition-Flags
-    let r = emu.reg_read(RegisterARM64::NZCV).unwrap() >> 28;
+    let pc = emu.reg_read(RegisterARM64::PC).unwrap();
+    println!("PC:    {pc:08x}");
 
-    // The result determines conditional branch behavior.
-    // E.g., C = 1 and Z = 0 will branch on B.HI (unsigned greater than).
-    // https://devblogs.microsoft.com/oldnewthing/20220815-00/?p=106975
-    println!("NZCV: {r:04b}"); // 1010
+    let r = emu.reg_read(RegisterARM64::X29).unwrap();
+    println!("X29:   {r:08x} (sp shadow)");
+    let r = emu.reg_read(RegisterARM64::X10).unwrap();
+    println!("X10:   {r:08x} (search index)");
+    let r = emu.reg_read(RegisterARM64::X11).unwrap();
+    println!("X11:   {r:08x} (first result ref)");
+    let r = emu.reg_read(RegisterARM64::X12).unwrap();
+    println!("X12:   {r:08x} (result data ref)");
+    let r = emu.reg_read(RegisterARM64::X13).unwrap();
+    println!("X13:   {r:08x} (target value)");
+    let r = emu.reg_read(RegisterARM64::X14).unwrap();
+    println!("X14:   {r:08x}");
+    let r = emu.reg_read(RegisterARM64::X15).unwrap();
+    println!("X15:   {r:08x} (current value)");
 
-    let r = emu.reg_read(RegisterARM64::W4).unwrap();
-    println!("W4:   {r:08x}");
+    let r = emu.reg_read(RegisterARM64::X21).unwrap();
+    println!("X21:   {r:08x}");
 
-    let r = emu.reg_read(RegisterARM64::W27).unwrap();
-    println!("W27:  {r:08x}");
+    let r = emu.reg_read(RegisterARM64::X0).unwrap();
+    println!(" X0:   {r:08x}");
+    let r = emu.reg_read(RegisterARM64::X6).unwrap();
+    println!(" X6:   {r:08x}");
+
+    let res = emu.mem_read_as_vec(a, RES_SIZE as usize).unwrap();
+    let d = res[8..].chunks(2);
+    for (i, e) in d.enumerate() {
+        let v: u16 = (e[1] as u16) << 8 | e[0] as u16;
+        print!("\n {:02}: {v:04x?}", i + 4);
+    }
 }
