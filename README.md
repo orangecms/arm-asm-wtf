@@ -56,7 +56,7 @@ How about Unicorn :unicorn:?
 https://www.unicorn-engine.org/docs/tutorial.html Well, I don't know C...
 
 But I downloaded the source release tarball anyway, and saw a Cargo.toml in
-there... Yay, Unicorn now has Rust bindings! :)
+there... Yay, Unicorn now has Rust bindings! 🦀
 
 The lib.rs already starts with an Arm 32-bit example, so just edit it and be
 done.
