@@ -10,6 +10,9 @@ const INST_SIZE: u64 = 4;
 
 // https://shell-storm.org/online/Online-Assembler-and-Disassembler/
 
+// This is effectively set_ds_odt in U-Boot
+// https://github.com/u-boot/u-boot/blob/master/drivers/ram/rockchip/sdram_rv1126.c
+
 // got offset + size from range: 0x2634 - 0x2528
 const CODE_OFFSET: u64 = 0x2528;
 const CODE_SIZE: u64 = 268;
@@ -142,15 +145,17 @@ fn main() {
     let res = emu.mem_read_as_vec(eod, ENTRY_SIZE as usize);
     println!("end of data @ {eod:08x}: {res:02x?}");
 
+    // Point to our data. The code looks for it at X0.
     emu.reg_write(RegisterARM64::X0, DATA_BASE).unwrap();
     let sp = RES_BASE;
-    emu.reg_write(RegisterARM64::SP, sp).unwrap();
-    // X29 shadows the SP
+    // X29 shadows the SP. It is used to store resulting data.
     emu.reg_write(RegisterARM64::X29, sp).unwrap();
 
     // Values used in code have to be stored in res block.
+    // The code looks at the first 4 u16 values and puts results after it.
+    // For each of the 4 values, a corresponding value is determined from DATA.
     let a = sp + 0x78;
-    emu.mem_write(a, &[0x26, 0x00, 0x26, 0x00, 0x1e, 0x00])
+    emu.mem_write(a, &[0x26, 0x00, 0x26, 0x00, 0x1e, 0x00, 0x00, 0x00])
         .expect("failed to write data");
 
     let res = emu.mem_read_as_vec(a, RES_SIZE as usize).unwrap();
