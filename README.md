@@ -51,7 +51,7 @@ Sooooooo... just emulate and be happy!
 Oops, http://163.238.35.161/~zhangs/arm64simulator/ is broken (as of the time
 writing this note).
 
-How about Unicorn :unicorn:?
+How about [Unicorn :unicorn:](https://www.unicorn-engine.org/)?
 
 https://www.unicorn-engine.org/docs/tutorial.html Well, I don't know C...
 
@@ -71,3 +71,11 @@ https://github.com/unicorn-engine/unicorn/releases/tag/2.1.3
 
 Extract it side by side with a clone of this repo.
 Then just `cargo run --release` here as usual.
+
+## Further steps
+
+If Unicorn is not enough, take a look at [Qiling](https://qiling.io/).
+It builds on top of Unicorn and offers full system emulation and runtimes such
+as UEFI and WebAssembly, I/O handling, syscalls, and more.
+There is no [Rust support](https://github.com/qilingframework/qiling/issues/253)
+at this point.
