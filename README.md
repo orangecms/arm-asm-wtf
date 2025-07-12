@@ -66,7 +66,7 @@ in JavaScript, but it only supports MIPS, ARM (32-bit), SPARC and x86 as of now.
 
 ## Running this
 
-Download the Unicorn source release tarball:
+Download the Unicorn source release tarball (_Source code (tar.gz)_):
 https://github.com/unicorn-engine/unicorn/releases/tag/2.1.3
 
 Extract it side by side with a clone of this repo.
